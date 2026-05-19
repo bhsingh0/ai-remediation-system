@@ -1,0 +1,10 @@
+[project]
+name = "ai-remediation-system"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.103.1",
+    "pytest>=9.0.3",
+]
