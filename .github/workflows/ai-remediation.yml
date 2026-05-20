@@ -61,10 +61,9 @@ jobs:
           git commit -m "fix: AI auto-remediation" || exit 0
           git push origin ai/fix-${{ github.run_id }}
           
-          # Create PR using GitHub CLI
+          # Create PR using GitHub CLI (no labels to avoid errors)
           gh pr create \
             --title "🤖 AI: auto fix for CI failure" \
             --body "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve." \
-            --label "ai-generated,auto-fix" \
             --head ai/fix-${{ github.run_id }} \
             --base ${{ github.ref_name }}
