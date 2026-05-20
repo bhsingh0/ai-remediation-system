@@ -45,13 +45,16 @@ jobs:
       - name: Run AI Fix
         if: steps.tests.outcome == 'failure'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_AP          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC
-          me: Create Pu   R   est
-        if: steps.tests.outcome ==        i'
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run python ai/fix_bug.py
+
+      - name: Create Pull Request
+        if: steps.tests.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Check if ther          # Check if    if [ -z "$(git status --short)" ]; then
+          # Check if there are changes
+          if [ -z "$(git status --short)" ]; then
             echo "No changes to commit"
             exit 0
           fi
