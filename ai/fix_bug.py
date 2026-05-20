@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI-powered bug fixer for CI failures with crystal clear exception handling prompts.
+AI-powered bug fixer for CI failures - with explicit test file content in prompt.
 """
  
 import os
@@ -71,6 +71,11 @@ class CIFailureCollector:
                 return f"Error reading {filepath}: {e}"
         return None
  
+    @staticmethod
+    def get_test_file_content() -> Optional[str]:
+        """Read test file content."""
+        return CIFailureCollector.get_file_content("tests/test_app.py")
+ 
     @classmethod
     def collect_all(cls) -> dict:
         """Collect all diagnostic information."""
@@ -86,12 +91,14 @@ class CIFailureCollector:
  
         test_output = cls.get_failing_tests()
         git_diff = cls.get_git_diff()
+        test_file_content = cls.get_test_file_content()
  
         diagnostics = {
             "git_diff": git_diff,
             "test_output": test_output,
             "impacted_files": impacted_files,
             "file_contents": file_contents,
+            "test_file_content": test_file_content,
         }
  
         print(f"✓ Found {len(impacted_files)} impacted files")
@@ -133,53 +140,55 @@ class ClaudeFixer:
             for filepath, content in diagnostics["file_contents"].items():
                 file_contents_section += f"\n### {filepath}\n```python\n{content}\n```\n"
  
+        test_file_section = ""
+        if diagnostics.get("test_file_content"):
+            test_file_section = f"\n## Test file (READ THIS!):\n```python\n{diagnostics['test_file_content']}\n```\n"
+ 
         prompt = f"""You are an expert Python developer fixing failing CI tests.
  
-⚠️ CRITICAL: Read test output VERY carefully for pytest.raises() - this tells you EXACTLY what exception type to use!
+🚨 CRITICAL: READ THE TEST FILE CAREFULLY! It shows EXACTLY what's expected!
  
-## Test failure output:
+## Test File Content (THIS IS THE SPEC):
+{test_file_section}
+ 
+## Test Failure Output:
 ```
 {diagnostics['test_output']}
 ```
  
-## Git diff:
+## Git Diff:
 ```
 {diagnostics['git_diff']}
 ```
  
 {file_contents_section}
  
-## 🚨 MOST IMPORTANT RULE:
+## KEY RULE:
  
-Look for this pattern in test output:
+When test says:
+```python
+def test_divide_by_zero(self):
+    with pytest.raises(ValueError, match="Cannot divide by zero"):
+        divide(10, 0)
 ```
-with pytest.raises(ValueError, match="Cannot divide by zero"):
-```
  
-This means your code MUST raise ValueError with that exact message!
- 
-CORRECT:
+YOUR CODE MUST BE:
 ```python
 def divide(a, b):
     if b == 0:
-        raise ValueError("Cannot divide by zero")  # ← ValueError!
+        raise ValueError("Cannot divide by zero")  # ← MUST be ValueError!
     return a / b
 ```
  
-WRONG:
+NOT:
 ```python
-def divide(a, b):
-    if b == 0:
-        raise ZeroDivisionError("Cannot divide by zero")  # ← WRONG exception type!
-    return a / b
+raise ZeroDivisionError(...)  # ← WRONG!
 ```
- 
-Use EXACTLY the exception type the test expects (ValueError, ZeroDivisionError, etc.)
  
 ## Response format:
  
 ### DIAGNOSIS
-Explain what's wrong
+What's wrong and how you'll fix it
  
 ### FIXED FILES
 `filename.py`
@@ -190,11 +199,7 @@ Explain what's wrong
 <complete fixed file>
 ```
  
-CRITICAL CHECKLIST:
-✓ Does test say pytest.raises(ValueError)? → raise ValueError
-✓ Does test say pytest.raises(ZeroDivisionError)? → raise ZeroDivisionError
-✓ Use EXACT error message from test
-✓ ALL tests must pass"""
+RULE: Match exception type EXACTLY as shown in test file!"""
  
         return prompt
  
@@ -208,7 +213,6 @@ CRITICAL CHECKLIST:
             "raw_response": response_text,
         }
  
-        # Extract DIAGNOSIS (handle both # and ###)
         diagnosis_match = re.search(
             r"#+\s*DIAGNOSIS\n(.*?)(?=#+\s*FIXED FILES|#+\s*PATCH|#+\s*TESTS|\Z)", 
             response_text, re.DOTALL | re.IGNORECASE
@@ -216,7 +220,6 @@ CRITICAL CHECKLIST:
         if diagnosis_match:
             result["diagnosis"] = diagnosis_match.group(1).strip()
  
-        # Extract all code blocks - more flexible approach
         all_code_blocks = re.findall(
             r"```python\n(?:# ([\w/.]+\.py)\n)?(.*?)```", 
             response_text, re.DOTALL
@@ -226,14 +229,12 @@ CRITICAL CHECKLIST:
         
         for filename, code in all_code_blocks:
             if not filename:
-                # If no filename comment, try to infer from content
                 if "def divide" in code or "def add" in code:
                     filename = "app/app.py"
                 elif "def test_" in code:
                     filename = "tests/test_app.py"
             
             if filename and code.strip():
-                # Determine if this is a test or app file
                 if "test_" in filename.lower() or "test" in code[:100].lower():
                     result["tests"][filename] = code.strip()
                 else:
@@ -312,11 +313,9 @@ def main():
     """Main entry point."""
     print("🚀 AI Remediation for CI Failures\n")
  
-    # Step 1: Collect diagnostics
     collector = CIFailureCollector()
     diagnostics = collector.collect_all()
  
-    # Step 2: Generate fix with Claude
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         print("❌ ANTHROPIC_API_KEY not set")
@@ -329,23 +328,19 @@ def main():
         print(f"❌ Claude API error: {e}")
         sys.exit(1)
  
-    # Show diagnosis
     if fix_data["diagnosis"]:
         print(f"\n📋 Diagnosis:\n{fix_data['diagnosis']}")
  
-    # Step 3: Validate we have fixes
     if not fix_data["fixed_files"]:
         print("❌ No fixes were generated")
         print("\nRaw response from Claude:")
         print(fix_data["raw_response"])
         sys.exit(1)
  
-    # Step 4: Apply patch
     if not PatchApplier.apply(fix_data):
         print("❌ Failed to apply patch")
         sys.exit(1)
  
-    # Step 5: Validate with tests
     tests_pass, test_output = TestValidator.run_tests()
  
     if not tests_pass:
@@ -353,7 +348,6 @@ def main():
         print(test_output)
         sys.exit(1)
  
-    # Success!
     print("\n✅ Fix applied and validated successfully!")
     print("\nSummary:")
     print(f"  • Fixed files: {len(fix_data['fixed_files'])}")
