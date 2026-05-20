@@ -1,10 +1,19 @@
 [project]
 name = "ai-remediation-system"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "AI-powered automatic CI failure remediation"
 requires-python = ">=3.10"
 dependencies = [
-    "anthropic>=0.103.1",
-    "pytest>=9.0.3",
+    "anthropic>=0.32.0",
 ]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

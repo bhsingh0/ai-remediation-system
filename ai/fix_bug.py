@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""
+AI-powered bug fixer for CI failures - with explicit test file content in prompt.
+"""
+ 
+import os
+import sys
+import subprocess
+import re
+from pathlib import Path
+from typing import Optional
+ 
+import anthropic
+ 
+ 
+class CIFailureCollector:
+    """Collect context about the CI failure."""
+ 
+    @staticmethod
+    def get_git_diff() -> str:
+        """Get the diff of changes since last commit."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout or "No changes detected"
+        except subprocess.CalledProcessError as e:
+            return f"Error getting diff: {e.stderr}"
+ 
+    @staticmethod
+    def get_failing_tests() -> str:
+        """Run tests and capture output."""
+        try:
+            result = subprocess.run(
+                ["python", "-m", "pytest", "-v", "--tb=short"],
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout + result.stderr
+        except subprocess.CalledProcessError as e:
+            return f"pytest error:\n{e.stdout}\n{e.stderr}"
+        except FileNotFoundError:
+            return "pytest not found - skipping test run"
+ 
+    @staticmethod
+    def get_impacted_files() -> list[str]:
+        """Get list of files changed in current diff."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            files = [f for f in result.stdout.strip().split("\n") if f]
+            return files
+        except subprocess.CalledProcessError:
+            return []
+ 
+    @staticmethod
+    def get_file_content(filepath: str) -> Optional[str]:
+        """Read file content if it exists."""
+        path = Path(filepath)
+        if path.exists() and path.is_file():
+            try:
+                return path.read_text()
+            except Exception as e:
+                return f"Error reading {filepath}: {e}"
+        return None
+ 
+    @staticmethod
+    def get_test_file_content() -> Optional[str]:
+        """Read test file content."""
+        return CIFailureCollector.get_file_content("tests/test_app.py")
+ 
+    @classmethod
+    def collect_all(cls) -> dict:
+        """Collect all diagnostic information."""
+        print("📊 Collecting diagnostic information...")
+ 
+        impacted_files = cls.get_impacted_files()
+        file_contents = {}
+ 
+        for filepath in impacted_files:
+            content = cls.get_file_content(filepath)
+            if content:
+                file_contents[filepath] = content
+ 
+        test_output = cls.get_failing_tests()
+        git_diff = cls.get_git_diff()
+        test_file_content = cls.get_test_file_content()
+ 
+        diagnostics = {
+            "git_diff": git_diff,
+            "test_output": test_output,
+            "impacted_files": impacted_files,
+            "file_contents": file_contents,
+            "test_file_content": test_file_content,
+        }
+ 
+        print(f"✓ Found {len(impacted_files)} impacted files")
+        print(f"✓ Collected test output ({len(test_output)} chars)")
+ 
+        return diagnostics
+ 
+ 
+class ClaudeFixer:
+    """Use Claude to generate fixes."""
+ 
+    def __init__(self, api_key: Optional[str] = None):
+        self.client = anthropic.Anthropic(api_key=api_key)
+ 
+    def generate_fix(self, diagnostics: dict) -> dict:
+        """Call Claude to generate a fix and tests."""
+        print("\n🤖 Calling Claude to generate fix...")
+ 
+        prompt = self._build_prompt(diagnostics)
+ 
+        message = self.client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+ 
+        response_text = message.content[0].text
+        fix_data = self._parse_response(response_text, diagnostics)
+ 
+        print("✓ Claude generated fix and tests")
+        return fix_data
+ 
+    @staticmethod
+    def _build_prompt(diagnostics: dict) -> str:
+        """Build the prompt for Claude."""
+        file_contents_section = ""
+        if diagnostics["file_contents"]:
+            file_contents_section = "## Current file contents:\n"
+            for filepath, content in diagnostics["file_contents"].items():
+                file_contents_section += f"\n### {filepath}\n```python\n{content}\n```\n"
+ 
+        test_file_section = ""
+        if diagnostics.get("test_file_content"):
+            test_file_section = f"\n## Test file (READ THIS!):\n```python\n{diagnostics['test_file_content']}\n```\n"
+ 
+        prompt = f"""You are an expert Python developer fixing failing CI tests.
+ 
+🚨 CRITICAL: READ THE TEST FILE CAREFULLY! It shows EXACTLY what's expected!
+ 
+## Test File Content (THIS IS THE SPEC):
+{test_file_section}
+ 
+## Test Failure Output:
+```
+{diagnostics['test_output']}
+```
+ 
+## Git Diff:
+```
+{diagnostics['git_diff']}
+```
+ 
+{file_contents_section}
+ 
+## KEY RULE:
+ 
+When test says:
+```python
+def test_divide_by_zero(self):
+    with pytest.raises(ValueError, match="Cannot divide by zero"):
+        divide(10, 0)
+```
+ 
+YOUR CODE MUST BE:
+```python
+def divide(a, b):
+    if b == 0:
+        raise ValueError("Cannot divide by zero")  # ← MUST be ValueError!
+    return a / b
+```
+ 
+NOT:
+```python
+raise ZeroDivisionError(...)  # ← WRONG!
+```
+ 
+## Response format:
+ 
+### DIAGNOSIS
+What's wrong and how you'll fix it
+ 
+### FIXED FILES
+`filename.py`
+ 
+### PATCH
+```python
+# filename.py
+<complete fixed file>
+```
+ 
+RULE: Match exception type EXACTLY as shown in test file!"""
+ 
+        return prompt
+ 
+    @staticmethod
+    def _parse_response(response_text: str, diagnostics: dict) -> dict:
+        """Parse Claude's response into structured data."""
+        result = {
+            "diagnosis": "",
+            "fixed_files": {},
+            "tests": {},
+            "raw_response": response_text,
+        }
+ 
+        diagnosis_match = re.search(
+            r"#+\s*DIAGNOSIS\n(.*?)(?=#+\s*FIXED FILES|#+\s*PATCH|#+\s*TESTS|\Z)", 
+            response_text, re.DOTALL | re.IGNORECASE
+        )
+        if diagnosis_match:
+            result["diagnosis"] = diagnosis_match.group(1).strip()
+ 
+        all_code_blocks = re.findall(
+            r"```python\n(?:# ([\w/.]+\.py)\n)?(.*?)```", 
+            response_text, re.DOTALL
+        )
+        
+        print(f"📝 Found {len(all_code_blocks)} code blocks in response")
+        
+        for filename, code in all_code_blocks:
+            if not filename:
+                if "def divide" in code or "def add" in code:
+                    filename = "app/app.py"
+                elif "def test_" in code:
+                    filename = "tests/test_app.py"
+            
+            if filename and code.strip():
+                if "test_" in filename.lower() or "test" in code[:100].lower():
+                    result["tests"][filename] = code.strip()
+                else:
+                    result["fixed_files"][filename] = code.strip()
+                print(f"  ✓ Extracted {filename}")
+ 
+        return result
+ 
+ 
+class PatchApplier:
+    """Apply the generated patch to the repository."""
+ 
+    @staticmethod
+    def apply(fix_data: dict) -> bool:
+        """Write the fixed files and tests to disk."""
+        print("\n📝 Applying patch...")
+ 
+        success = True
+ 
+        for filepath, content in fix_data["fixed_files"].items():
+            try:
+                path = Path(filepath)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content + "\n")
+                print(f"  ✓ Updated {filepath}")
+            except Exception as e:
+                print(f"  ✗ Error writing {filepath}: {e}")
+                success = False
+ 
+        for filepath, content in fix_data["tests"].items():
+            try:
+                path = Path(filepath)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content + "\n")
+                print(f"  ✓ Created {filepath}")
+            except Exception as e:
+                print(f"  ✗ Error writing {filepath}: {e}")
+                success = False
+ 
+        return success
+ 
+ 
+class TestValidator:
+    """Validate that the patch actually fixes the tests."""
+ 
+    @staticmethod
+    def run_tests() -> tuple[bool, str]:
+        """Run tests and return success status and output."""
+        print("\n🧪 Validating patch with tests...")
+ 
+        try:
+            result = subprocess.run(
+                ["python", "-m", "pytest", "-v"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+ 
+            output = result.stdout + result.stderr
+            passed = result.returncode == 0
+ 
+            if passed:
+                print("✓ All tests passing")
+            else:
+                print(f"✗ Tests still failing:\n{output}")
+ 
+            return passed, output
+ 
+        except subprocess.TimeoutExpired:
+            return False, "Tests timed out"
+        except Exception as e:
+            return False, f"Error running tests: {e}"
+ 
+ 
+def main():
+    """Main entry point."""
+    print("🚀 AI Remediation for CI Failures\n")
+ 
+    collector = CIFailureCollector()
+    diagnostics = collector.collect_all()
+ 
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("❌ ANTHROPIC_API_KEY not set")
+        sys.exit(1)
+ 
+    fixer = ClaudeFixer(api_key=api_key)
+    try:
+        fix_data = fixer.generate_fix(diagnostics)
+    except anthropic.APIError as e:
+        print(f"❌ Claude API error: {e}")
+        sys.exit(1)
+ 
+    if fix_data["diagnosis"]:
+        print(f"\n📋 Diagnosis:\n{fix_data['diagnosis']}")
+ 
+    if not fix_data["fixed_files"]:
+        print("❌ No fixes were generated")
+        print("\nRaw response from Claude:")
+        print(fix_data["raw_response"])
+        sys.exit(1)
+ 
+    if not PatchApplier.apply(fix_data):
+        print("❌ Failed to apply patch")
+        sys.exit(1)
+ 
+    tests_pass, test_output = TestValidator.run_tests()
+ 
+    if not tests_pass:
+        print("\n⚠️  Patch applied but tests still failing:")
+        print(test_output)
+        sys.exit(1)
+ 
+    print("\n✅ Fix applied and validated successfully!")
+    print("\nSummary:")
+    print(f"  • Fixed files: {len(fix_data['fixed_files'])}")
+    print(f"  • Test files: {len(fix_data['tests'])}")
+    for filepath in fix_data["fixed_files"]:
+        print(f"    - {filepath}")
+ 
+    sys.exit(0)
+ 
+ 
+if __name__ == "__main__":
+    main()

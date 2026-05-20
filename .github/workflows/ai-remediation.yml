@@ -1,0 +1,85 @@
+name: AI Remediation workflow
+
+on:
+  push:
+    branches: ["main", "fix/*"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config --global user.email "noreply@github.com"
+          git config --global user.name "AI Fixer"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        id: tests
+        run: python -m pytest tests/ -v
+        continue-on-error: true
+
+      - name: Run AI Fix
+        if: steps.tests.outcome == 'failure'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run python ai/fix_bug.py
+
+      - name: Create Pull Request
+        if: steps.tests.outcome == 'failure'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "fix: AI auto-remediation"
+          title: "🤖 AI: auto fix for CI failure"
+          body: "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve."
+          branch: ai/fix-${{ github.run_id }}
+          delete-branch: true
+
+  notify:
+    needs: fix
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install dependencies
+        run: pip install anthropic
+
+      - name: Send Slack notification
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: "#ci-notifications"
+          PR_TITLE: "🤖 AI: auto fix for CI failure"
+          FIXED_FILES: "app/app.py"
+        run: python scripts/notify_slack.py
