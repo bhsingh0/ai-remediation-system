@@ -125,7 +125,7 @@ class ClaudeFixer:
         prompt = self._build_prompt(diagnostics)
 
         message = self.client.messages.create(
-            model="claude-haiku-4-5-20241001",
+            model="claude-haiku-4-5",
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
