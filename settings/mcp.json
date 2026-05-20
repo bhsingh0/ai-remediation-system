@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "slack": {
+      "type": "url",
+      "url": "https://mcp.slack.com/sse",
+      "name": "slack",
+      "description": "Send messages to Slack channels"
+    }
+  }
+}

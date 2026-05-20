@@ -58,3 +58,20 @@ jobs:
           body: "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve."
           branch: ai/fix-${{ github.run_id }}
           delete-branch: true
+  notify:
+    needs: fix
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - run: pip install anthropic
+      
+      - name: Send Slack notification
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_CHANNEL: "#ci-notifications"
+        run: python scripts/notify_slack.py
