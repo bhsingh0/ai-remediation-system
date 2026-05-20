@@ -15,7 +15,6 @@ Requires: ANTHROPIC_API_KEY environment variable
  
 import os
 import sys
-import json
 import subprocess
 import re
 from pathlib import Path
@@ -50,7 +49,6 @@ class CIFailureCollector:
                 capture_output=True,
                 text=True,
             )
-            # Include both stdout and stderr
             return result.stdout + result.stderr
         except subprocess.CalledProcessError as e:
             return f"pytest error:\n{e.stdout}\n{e.stderr}"
@@ -145,62 +143,80 @@ class ClaudeFixer:
             for filepath, content in diagnostics["file_contents"].items():
                 file_contents_section += f"\n### {filepath}\n```python\n{content}\n```\n"
  
-        prompt = f"""You are an expert Python developer tasked with fixing a failing CI test.
+        prompt = f"""You are an expert Python developer fixing failing CI tests.
  
-READ THE TEST OUTPUT CAREFULLY to understand:
-1. EXACTLY what exception type is expected (ValueError vs ZeroDivisionError vs other)
-2. The exact error message required
-3. All test assertions and expectations
+READ THE TEST OUTPUT VERY CAREFULLY to understand:
+1. What exceptions the tests expect (ValueError, ZeroDivisionError, etc.)
+2. What error messages are expected
+3. All edge cases being tested
  
-## Test failure output:
+## Test failure output (READ THIS CAREFULLY):
 ```
 {diagnostics['test_output']}
 ```
  
-## Git diff (changes that broke tests):
+## Git diff (what changed):
 ```
 {diagnostics['git_diff']}
 ```
  
 {file_contents_section}
  
-## CRITICAL RULES:
+## CRITICAL RULES FOR YOUR FIX:
  
-1. **Match exception types EXACTLY** - If test uses pytest.raises(ValueError), raise ValueError NOT ZeroDivisionError
-2. **Match error messages EXACTLY** - Use the exact string from the test
-3. **Handle ALL edge cases** - Look at ALL test assertions
-4. **Include ALL error handling** - Make sure EVERY test passes
+1. **LOOK FOR pytest.raises() IN TEST OUTPUT**
+   - If you see: pytest.raises(ValueError) → you MUST raise ValueError
+   - If you see: pytest.raises(ZeroDivisionError) → you MUST raise ZeroDivisionError
+   - If you see: match="message" → use EXACTLY that message
+ 
+2. **HANDLE ALL EDGE CASES SHOWN IN TESTS**
+   - If tests check divide by zero: add `if b == 0: raise ValueError("Cannot divide by zero")`
+   - If tests check negative numbers: make sure they work
+   - Check ALL test names to understand ALL requirements
+ 
+3. **MATCH ERROR TYPES AND MESSAGES EXACTLY**
+   - Don't use different exception types
+   - Don't use different error messages
+   - Use EXACTLY what the test expects
+ 
+4. **MAKE ALL TESTS PASS**
+   - Your fix must make ALL failing tests pass
+   - Don't just fix obvious bugs - look for edge case handling
  
 ## Response format:
  
-Provide your response with these EXACT sections (use ### headers):
- 
 ### DIAGNOSIS
 Explain:
-- The root cause
-- What exception type the test expects
-- What error message is required
+- Root cause of the bug
+- What error handling is missing
 - How you'll fix it
  
 ### FIXED FILES
-List files to fix in format: `filename.py`
+List format: `filename.py`
  
 ### PATCH
-Provide complete fixed file contents:
+For each file, provide complete corrected content:
  
 ```python
 # filename.py
-<complete file content>
+<complete file content with all error handling>
 ```
  
-CRITICAL REQUIREMENTS:
-- Read test output to understand EXACT requirements
-- If test says pytest.raises(ValueError), use ValueError NOT ZeroDivisionError
-- If test says pytest.raises(ZeroDivisionError), use ZeroDivisionError
-- Include exact error message from test output
-- All tests must pass with your fix
-- Complete working code only
-- Minimal changes - no refactoring"""
+EXAMPLE: If test expects ValueError for divide by zero:
+```python
+# app/app.py
+def divide(a, b):
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+```
+ 
+CRITICAL CHECKLIST:
+✓ Read test output for pytest.raises() calls
+✓ Use correct exception type (ValueError vs ZeroDivisionError)
+✓ Use correct error message from test
+✓ Include ALL error handling needed
+✓ Make sure ALL tests will pass"""
  
         return prompt
  
@@ -234,7 +250,7 @@ CRITICAL REQUIREMENTS:
             for filename, code in code_blocks:
                 result["fixed_files"][filename] = code.strip()
  
-        # Extract TESTS section
+        # Extract TESTS section if present
         tests_match = re.search(
             r"### TESTS\n(.*?)(?=###|\Z)", response_text, re.DOTALL
         )
