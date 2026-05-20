@@ -17,6 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Git
+        run: |
+          git config --global user.email "noreply@example.com"
+          git config --global user.name "AI Fixer"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -49,17 +54,6 @@ jobs:
         run: |
           echo "Running AI fix script..."
           uv run python ai/fix_bug.py
-          echo "AI fix completed"
-
-      - name: Check if files changed
-        if: steps.tests.outcome == 'failure'
-        run: |
-          if [ -n "$(git status --short)" ]; then
-            echo "Files changed by AI fix:"
-            git status --short
-          else
-            echo "No files changed"
-          fi
 
       - name: Create Pull Request
         if: steps.tests.outcome == 'failure'
@@ -72,10 +66,7 @@ jobs:
             
             This PR was automatically generated to fix a CI failure using Claude AI.
             
-            Please review the changes:
-            - Check if the fix is correct
-            - Verify all tests pass
-            - Approve and merge when ready
+            Please review the changes and approve if they look correct.
           commit-message: "fix: AI auto-remediation"
           labels: |
             ai-generated
