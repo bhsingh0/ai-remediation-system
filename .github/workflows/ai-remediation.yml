@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main", "fix/*"]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -41,16 +45,13 @@ jobs:
       - name: Run AI Fix
         if: steps.tests.outcome == 'failure'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run python ai/fix_bug.py
-
-      - name: Create Pull Request
-        if: steps.tests.outcome == 'failure'
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_AP          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC
+          me: Create Pu   R   est
+        if: steps.tests.outcome ==        i'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Check if there are changes
-          if [ -z "$(git status --short)" ]; then
+          # Check if ther          # Check if    if [ -z "$(git status --short)" ]; then
             echo "No changes to commit"
             exit 0
           fi
@@ -61,7 +62,7 @@ jobs:
           git commit -m "fix: AI auto-remediation" || exit 0
           git push origin ai/fix-${{ github.run_id }}
           
-          # Create PR using GitHub CLI (no labels to avoid errors)
+          # Create PR using GitHub CLI
           gh pr create \
             --title "🤖 AI: auto fix for CI failure" \
             --body "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve." \
