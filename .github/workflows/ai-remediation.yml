@@ -41,5 +41,14 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           branch: ai/fix
-          title: "AI: auto fix"
-          commit-message: "AI auto fix applied"
+          title: "🤖 AI: auto fix"
+          body: |
+            # AI Auto-Fix
+            
+            This PR was automatically generated to fix a CI failure.
+            
+            Please review the changes and approve if they look correct.
+          commit-message: "fix: AI auto-remediation"
+          labels: |
+            ai-generated
+            auto-fix
