@@ -1,4 +1,4 @@
-name: AI Remediation
+name: AI Remediation workflow
 
 on:
   push:
