@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 """
-AI-powered bug fixer for CI failures.
- 
-Workflow:
-1. Collect: git diff, test output, impacted files
-2. Claude: generate minimal patch + regression tests
-3. Apply: write changes to disk
-4. Validate: run tests locally
-5. Output: summary for GitHub Actions
- 
-Usage: python ai/fix_bug.py
-Requires: ANTHROPIC_API_KEY environment variable
+AI-powered bug fixer for CI failures with crystal clear exception handling prompts.
 """
  
 import os
@@ -145,61 +135,66 @@ class ClaudeFixer:
  
         prompt = f"""You are an expert Python developer fixing failing CI tests.
  
-IMPORTANT: Read the test output for pytest.raises() calls - this tells you what exception to raise!
+⚠️ CRITICAL: Read test output VERY carefully for pytest.raises() - this tells you EXACTLY what exception type to use!
  
-## Test failure output (READ THIS VERY CAREFULLY):
+## Test failure output:
 ```
 {diagnostics['test_output']}
 ```
  
-## Git diff (what changed):
+## Git diff:
 ```
 {diagnostics['git_diff']}
 ```
  
 {file_contents_section}
  
-## CRITICAL INSTRUCTIONS:
+## 🚨 MOST IMPORTANT RULE:
  
-When you see in the test output:
+Look for this pattern in test output:
 ```
 with pytest.raises(ValueError, match="Cannot divide by zero"):
-    divide(10, 0)
 ```
  
-YOU MUST ADD THIS TO divide():
+This means your code MUST raise ValueError with that exact message!
+ 
+CORRECT:
 ```python
 def divide(a, b):
     if b == 0:
-        raise ValueError("Cannot divide by zero")
+        raise ValueError("Cannot divide by zero")  # ← ValueError!
     return a / b
 ```
  
-DO NOT let Python's natural ZeroDivisionError happen - EXPLICITLY raise ValueError with the exact message!
+WRONG:
+```python
+def divide(a, b):
+    if b == 0:
+        raise ZeroDivisionError("Cannot divide by zero")  # ← WRONG exception type!
+    return a / b
+```
+ 
+Use EXACTLY the exception type the test expects (ValueError, ZeroDivisionError, etc.)
  
 ## Response format:
  
 ### DIAGNOSIS
-- What's wrong
-- What error handling is missing
-- How you'll fix it
+Explain what's wrong
  
 ### FIXED FILES
-List: `filename.py`
+`filename.py`
  
 ### PATCH
 ```python
 # filename.py
-<complete file with error handling>
+<complete fixed file>
 ```
  
-CRITICAL: If test expects ValueError("Cannot divide by zero"), add:
-```python
-if b == 0:
-    raise ValueError("Cannot divide by zero")
-```
- 
-Make sure ALL 8 tests pass!"""
+CRITICAL CHECKLIST:
+✓ Does test say pytest.raises(ValueError)? → raise ValueError
+✓ Does test say pytest.raises(ZeroDivisionError)? → raise ZeroDivisionError
+✓ Use EXACT error message from test
+✓ ALL tests must pass"""
  
         return prompt
  
@@ -222,7 +217,6 @@ Make sure ALL 8 tests pass!"""
             result["diagnosis"] = diagnosis_match.group(1).strip()
  
         # Extract all code blocks - more flexible approach
-        # Look for code blocks with optional filename comment
         all_code_blocks = re.findall(
             r"```python\n(?:# ([\w/.]+\.py)\n)?(.*?)```", 
             response_text, re.DOTALL
@@ -259,7 +253,6 @@ class PatchApplier:
  
         success = True
  
-        # Apply fixed files
         for filepath, content in fix_data["fixed_files"].items():
             try:
                 path = Path(filepath)
@@ -270,7 +263,6 @@ class PatchApplier:
                 print(f"  ✗ Error writing {filepath}: {e}")
                 success = False
  
-        # Apply tests
         for filepath, content in fix_data["tests"].items():
             try:
                 path = Path(filepath)
