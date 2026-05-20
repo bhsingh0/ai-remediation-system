@@ -50,24 +50,11 @@ jobs:
 
       - name: Create Pull Request
         if: steps.tests.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Check if there are changes
-          if [ -z "$(git status --short)" ]; then
-            echo "No changes to commit"
-            exit 0
-          fi
-          
-          # Create a new branch
-          git checkout -b ai/fix-${{ github.run_id }}
-          git add app/ tests/
-          git commit -m "fix: AI auto-remediation" || exit 0
-          git push origin ai/fix-${{ github.run_id }}
-          
-          # Create PR using GitHub CLI
-          gh pr create \
-            --title "🤖 AI: auto fix for CI failure" \
-            --body "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve." \
-            --head ai/fix-${{ github.run_id }} \
-            --base ${{ github.ref_name }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "fix: AI auto-remediation"
+          title: "🤖 AI: auto fix for CI failure"
+          body: "This PR was automatically generated to fix a CI failure using Claude AI. Please review and approve."
+          branch: ai/fix-${{ github.run_id }}
+          delete-branch: true
