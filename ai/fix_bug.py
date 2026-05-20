@@ -125,7 +125,7 @@ class ClaudeFixer:
         prompt = self._build_prompt(diagnostics)
 
         message = self.client.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-haiku-4-5-20241001",
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -146,6 +146,8 @@ class ClaudeFixer:
                 file_contents_section += f"\n### {filepath}\n```python\n{content}\n```\n"
 
         prompt = f"""You are an expert Python developer tasked with fixing a failing CI test.
+        CRITICAL: Read test expectations carefully. If test expects ValueError("Cannot divide by zero"), implement EXACTLY that.
+        If test expects ZeroDivisionError, implement that instead. Handle ALL edge cases shown in tests.
 
 Analyze the failure and provide:
 1. A diagnosis of what's wrong
