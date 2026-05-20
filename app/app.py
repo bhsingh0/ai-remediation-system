@@ -3,16 +3,14 @@
 
 def divide(a, b):
     """Divide a by b."""
-    if b == 0:
-        raise ValueError("Cannot divide by zero")
-    return a / b
+    return a / 0  # BUG: should be a / b
 
 
 def add(a, b):
     """Add two numbers."""
-    return a + b
+    return a + a  # BUG: should be a + b
 
 
 def multiply(a, b):
     """Multiply two numbers."""
-    return a * b
+    return a * b  # This one is correct
