@@ -6,9 +6,6 @@ on:
 
 jobs:
   fix:
-    # Only run if tests would fail
-    # We'll check this in the script
-    
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,31 +28,56 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run tests to check if they fail
-        id: test_check
-        run: |
-          python -m pytest tests/ -v || echo "tests_failed=true" >> $GITHUB_OUTPUT
+      - name: Run tests
+        id: tests
+        run: python -m pytest tests/ -v
         continue-on-error: true
 
-      - name: Run AI Fix (if tests failed)
-        if: failure()
+      - name: Show test results
+        run: |
+          echo "Exit code: ${{ steps.tests.outcome }}"
+          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            echo "Tests FAILED - will run AI fix"
+          else
+            echo "Tests PASSED - no fix needed"
+          fi
+
+      - name: Run AI Fix
+        if: steps.tests.outcome == 'failure'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run python ai/fix_bug.py
+        run: |
+          echo "Running AI fix script..."
+          uv run python ai/fix_bug.py
+          echo "AI fix completed"
+
+      - name: Check if files changed
+        if: steps.tests.outcome == 'failure'
+        run: |
+          if [ -n "$(git status --short)" ]; then
+            echo "Files changed by AI fix:"
+            git status --short
+          else
+            echo "No files changed"
+          fi
 
       - name: Create Pull Request
-        if: failure()
+        if: steps.tests.outcome == 'failure'
         uses: peter-evans/create-pull-request@v6
         with:
           branch: ai/fix
           title: "🤖 AI: auto fix for CI failure"
           body: |
-            # AI Auto-Fix
+            # AI Auto-Fix PR
             
-            This PR was automatically generated to fix a CI failure.
+            This PR was automatically generated to fix a CI failure using Claude AI.
             
-            Please review the changes and approve if they look correct.
+            Please review the changes:
+            - Check if the fix is correct
+            - Verify all tests pass
+            - Approve and merge when ready
           commit-message: "fix: AI auto-remediation"
           labels: |
             ai-generated
             auto-fix
+          delete-branch: true
