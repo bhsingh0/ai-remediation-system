@@ -1,17 +1,15 @@
 name: AI Remediation
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
+    branches: ["main", "fix/*"]
 
 jobs:
   fix:
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
-
+    # Only run if tests would fail
+    # We'll check this in the script
+    
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
       pull-requests: write
@@ -19,11 +17,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Install uv
         run: pip install uv
@@ -31,17 +31,24 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run AI Fix
+      - name: Run tests to check if they fail
+        id: test_check
+        run: |
+          python -m pytest tests/ -v || echo "tests_failed=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Run AI Fix (if tests failed)
+        if: failure()
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          uv run python ai/fix_bug.py
+        run: uv run python ai/fix_bug.py
 
       - name: Create Pull Request
+        if: failure()
         uses: peter-evans/create-pull-request@v6
         with:
           branch: ai/fix
-          title: "🤖 AI: auto fix"
+          title: "🤖 AI: auto fix for CI failure"
           body: |
             # AI Auto-Fix
             
