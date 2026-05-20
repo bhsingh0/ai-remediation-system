@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 
 def send_slack_notification():
-    """Send message to Slack using webhook API."""
+    """Send message to Slack using API."""
     
     slack_token = os.getenv("SLACK_BOT_TOKEN")
     slack_channel = os.getenv("SLACK_CHANNEL", "#ci-notifications")
@@ -23,17 +23,43 @@ def send_slack_notification():
         "text": "🤖 AI Auto-Fix Completed Successfully!",
         "blocks": [
             {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "🤖 AI Auto-Fix Completed!"
+                }
+            },
+            {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *AI Auto-Fix PR Merged!*\n\nRepository: ai-remediation-system\nStatus: All tests passing ✨\n\n🎉 Ready to review and merge!"
+                    "text": "*Repository:* ai-remediation-system\n*Status:* ✅ All tests passing\n*PR:* Ready for review"
                 }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*What Claude Fixed:*\n• ✅ Fixed `divide()` function\n• ✅ Fixed `add()` function\n• ✅ Added error handling\n• ✅ Added regression tests"
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "View PR"
+                        },
+                        "url": "https://github.com/bhsingh0/ai-remediation-system/pulls"
+                    }
+                ]
             }
         ]
     }
 
     try:
-        # Use Slack API with bot token
         url = "https://slack.com/api/chat.postMessage"
         
         req = Request(
@@ -49,7 +75,7 @@ def send_slack_notification():
             result = json.loads(response.read().decode('utf-8'))
             
             if result.get("ok"):
-                print("✅ Slack notification sent!")
+                print("✅ Slack notification sent with PR details!")
                 return True
             else:
                 print(f"❌ Slack API error: {result.get('error')}")
