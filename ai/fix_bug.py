@@ -230,16 +230,16 @@ CRITICAL CHECKLIST:
             "raw_response": response_text,
         }
  
-        # Extract DIAGNOSIS
+        # Extract DIAGNOSIS (handle both # and ###)
         diagnosis_match = re.search(
-            r"### DIAGNOSIS\n(.*?)(?=###|\Z)", response_text, re.DOTALL
+            r"#+\s*DIAGNOSIS\n(.*?)(?=#+\s*FIXED FILES|#+\s*PATCH|#+\s*TESTS|\Z)", response_text, re.DOTALL | re.IGNORECASE
         )
         if diagnosis_match:
             result["diagnosis"] = diagnosis_match.group(1).strip()
  
-        # Extract PATCH section and parse code blocks
+        # Extract PATCH section and parse code blocks (handle both # and ###)
         patch_match = re.search(
-            r"### PATCH\n(.*?)(?=### TESTS|\Z)", response_text, re.DOTALL
+            r"#+\s*PATCH\n(.*?)(?=#+\s*TESTS|#+\s*FIXED FILES|\Z)", response_text, re.DOTALL | re.IGNORECASE
         )
         if patch_match:
             patch_text = patch_match.group(1)
@@ -250,9 +250,9 @@ CRITICAL CHECKLIST:
             for filename, code in code_blocks:
                 result["fixed_files"][filename] = code.strip()
  
-        # Extract TESTS section if present
+        # Extract TESTS section if present (handle both # and ###)
         tests_match = re.search(
-            r"### TESTS\n(.*?)(?=###|\Z)", response_text, re.DOTALL
+            r"#+\s*TESTS\n(.*?)(?=#+|\Z)", response_text, re.DOTALL | re.IGNORECASE
         )
         if tests_match:
             tests_text = tests_match.group(1)
@@ -391,3 +391,4 @@ def main():
  
 if __name__ == "__main__":
     main()
+ 
